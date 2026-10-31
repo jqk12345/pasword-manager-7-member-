@@ -1,29 +1,28 @@
 # Thiết kế Mật mã / Cryptography Design — Secure Vault Android
 
 - **Dự án / Project:** Secure Vault Android
-- **Phụ trách chính / Lead Authors:** R1 – Mạnh4 (Security Architect) & R5 – Minh (Crypto & Keystore Engineer)
-- **Phiên bản / Version:** v0.1 (Bản nháp G1 — Chuẩn bị cho V2 Security Core / Phase G1 Draft for V2)
+- **Phụ trách chính / Lead Author:** R1 – Mạnh4 (Security Architect) *(Đồng bộ hóa với R5 – Minh: Crypto & Keystore Engineer)*
+- **Phiên bản / Version:** v0.1 (Bản chốt G1 — Chuẩn bị cho V2 Security Core / Phase G1 Finalized Draft for V2)
 - **Ngày cập nhật / Last Updated:** 01/11/2026
 
 ---
 
-## 1. Mục tiêu thiết kế / Design Goals
+## 1. Mục tiêu thiết kế & Phân vùng bảo mật / Design Goals & 3 Security Zones
 
-1. **Bảo mật dữ liệu nghỉ / Data-at-Rest Confidentiality & Integrity:**
-   - **VI:** Mọi thông tin nhạy cảm trong SQLite (Room) và file đính kèm (ảnh/PDF giấy tờ) đều được mã hóa xác thực (**AEAD**). Kẻ tấn công kéo toàn bộ thư mục `/data/data/...` qua `adb` không thể đọc hoặc sửa đổi trái phép dữ liệu.
-   - **EN:** All sensitive records in SQLite (Room) and attached files (ID images/PDFs) are protected using Authenticated Encryption with Associated Data (**AEAD**). An attacker extracting `/data/data/...` via `adb` cannot read or undetectedly modify any sensitive content.
+1. **Ba Phân vùng Bảo mật / Three Security Zones (`README.md` & R5 Alignment):**
+   - **Untrusted Zone (Vùng không đáng tin cậy):** Gồm dữ liệu đầu vào (`Master Password` dạng `CharArray`, tài liệu từ SAF `content://`, yêu cầu `FillRequest` của `AutofillService`) và dữ liệu lưu trữ trên đĩa (`vault_meta`, Room DB, `filesDir/docs/<uuid>.bin`, file backup `.svbk`).
+   - **In-Memory Safe Zone (Vùng an toàn trong bộ nhớ - RAM):** Nơi diễn ra dẫn xuất khóa `Argon2id` (`MK / KEK`), quản lý khóa phiên `VK / DEK` trong `VaultSession`, và thực thi mã hóa/giải mã tại `VaultRepository` & `DocumentStore`.
+   - **Hardware Security Zone (Vùng bảo mật phần cứng - TEE):** Android Keystore chứa khóa không thể trích xuất `vault_wrap_key` kết hợp xác thực phần cứng qua `BiometricPrompt` (`CryptoObject`).
 
-2. **Độc lập giữa khóa dữ liệu và mật khẩu người dùng / Decoupling Data Encryption Keys from User Credentials:**
-   - **VI:** Dữ liệu được mã hóa bằng **Vault Key (VK)** ngẫu nhiên thay vì mã hóa trực tiếp bằng khóa dẫn xuất từ mật khẩu. Nhờ đó:
-     - Có thể mở khóa cùng một `VK` bằng nhiều phương thức (**Master Password** hoặc **Sinh trắc học / Android Keystore**).
-     - Khi **đổi Master Password**, chỉ cần bọc lại (rewrap) `VK` trong thời gian $O(1)$ mà không phải giải mã và mã hóa lại toàn bộ cơ sở dữ liệu.
-   - **EN:** Application data is encrypted with a randomly generated **Vault Key (VK)** rather than directly with a password-derived key. Consequently:
-     - The same `VK` can be unlocked via multiple factors (**Master Password** or **Biometrics / Android Keystore**).
-     - **Master Password rotation** only requires re-wrapping `VK` in $O(1)$ time without re-encrypting the underlying database or files.
+2. **Phân tách khóa & Bọc khóa kép / Key Separation & Double Key Wrapping:**
+   - **Master Key (`MK` / `KEK` - 32 bytes):** Chỉ dùng để bọc/mở bọc `VK / DEK`, xóa trắng ngay lập tức sau khi dùng (`KEK.fill(0)`).
+   - **Vault Key (`VK` / `DEK` - 32 bytes):** Khóa đối xứng trung tâm mã hóa bản ghi Room DB và tài liệu. Được lưu trong bảng `vault_meta` dưới 2 bản bọc độc lập:
+     - `wrappedDEK`: Bọc bởi `MK / KEK` (`AES-256-GCM`).
+     - `wrappedDEK_bio`: Bọc bởi khóa phần cứng `vault_wrap_key` trong Android Keystore.
+   - Khi **đổi Master Password**, chỉ cần bọc lại (`Rewrap`) `VK / DEK` sang `wrappedDEK` mới trong thời gian $O(1)$ mà không cần giải mã lại toàn bộ DB.
 
-3. **Chống tấn công cắt dán & tráo đổi bản ghi / Anti-Tampering & Context Binding:**
-   - **VI:** Sử dụng **Associated Data (AAD)** gắn chặt bản mã với định danh bản ghi và tên trường dữ liệu.
-   - **EN:** Enforces cryptographic context binding via **Associated Data (AAD)** tying every ciphertext blob to its exact record type, record UUID, and field name.
+3. **Chống tấn công cắt dán & tráo đổi bản ghi / Anti-Tampering & Context Binding (AAD):**
+   - Gắn ngữ cảnh **Associated Data (AAD)** chứa `entryId` và tên trường vào mọi thao tác `AES-256-GCM`.
 
 ---
 
@@ -33,39 +32,39 @@
 
 ```mermaid
 flowchart TD
-    subgraph UserInput["1. Nhánh Mật khẩu / Password Unlock Branch"]
-        MP["Master Password (CharArray / ByteArray)"]
-        Salt["Random Salt (16 bytes - SecureRandom)"]
-        Argon["Argon2id KDF (argon2kt)"]
-        MK["Master Key - MK (256-bit, RAM only)"]
+    subgraph UserInput["1. Nhánh Mật khẩu / Password Unlock Branch (R5 & R1)"]
+        MP["Master Password (CharArray)"]
+        Salt["Random Salt (16 bytes - SecureRandom in vault_meta)"]
+        Argon["Argon2id KDF (argon2kt:1.6.0: m=64MiB, t=3, p=1)"]
+        MK["Master Key - MK / KEK (32B, RAM only -> KEK.fill(0))"]
 
         MP --> Argon
         Salt --> Argon
         Argon -->|"Dẫn xuất khóa / Derive Key"| MK
     end
 
-    subgraph HardwareBio["2. Nhánh Sinh trắc học / Biometric Unlock Branch"]
-        BioPrompt["BiometricPrompt (BIOMETRIC_STRONG)"]
-        KeystoreKEK["Biometric Key - KEK (AES-256-GCM in Android Keystore / TEE)"]
+    subgraph HardwareBio["2. Nhánh Sinh trắc học / Biometric Unlock Branch (R5)"]
+        BioPrompt["BiometricPrompt (BIOMETRIC_STRONG + CryptoObject)"]
+        KeystoreKEK["Android Keystore Alias: vault_wrap_key (AES-256-GCM in TEE)"]
         BioPrompt -->|"Xác thực phần cứng / Hardware Auth"| KeystoreKEK
     end
 
-    subgraph KeyWrapping["3. Bọc & Bảo vệ Vault Key / Wrapped VK Storage (vault_metadata table)"]
-        WrappedPW["wrapped_vk_password + nonce_pw (12B) + tag (16B)"]
-        WrappedBio["wrapped_vk_biometric + nonce_bio (12B) + tag (16B)"]
+    subgraph KeyWrapping["3. Bọc & Bảo vệ Vault Key / Double Key Wrapping (vault_meta table)"]
+        WrappedPW["wrappedDEK + nonce_pw (12B) + tag (16B)"]
+        WrappedBio["wrappedDEK_bio + nonce_bio (12B) + tag (16B)"]
         MK <-->|"AES-256-GCM Wrap / Unwrap"| WrappedPW
         KeystoreKEK <-->|"Keystore AES-GCM Wrap / Unwrap"| WrappedBio
     end
 
-    subgraph CoreKey["4. Khóa trung tâm / Core Session Key (RAM Only While Unlocked)"]
-        VK["Vault Key - VK (256-bit CSPRNG)"]
+    subgraph CoreKey["4. Khóa trung tâm / VaultSession (In-Memory Safe Zone)"]
+        VK["Vault Key - VK / DEK (32B CSPRNG -> DEK.fill(0) on Lock)"]
         WrappedPW -->|"Unwrap thành công / Unwrap Success"| VK
         WrappedBio -->|"Unwrap thành công / Unwrap Success"| VK
     end
 
-    subgraph DataEncryption["5. Mã hóa Dữ liệu & Tệp / Record & File Encryption"]
-        CredFields["Trường nhạy cảm trong Room / Sensitive DB Fields<br/>AES-256-GCM + Nonce 12B + AAD (type:id:field:v1)"]
-        DocFiles["File Ảnh & PDF Giấy tờ / Document Files (V3)<br/>Tink Streaming AEAD / Per-file FEK + AAD"]
+    subgraph DataEncryption["5. Mã hóa Dữ liệu & Tài liệu / Record & Document Encryption (R1 & R3)"]
+        CredFields["VaultRepository (Room DB Fields)<br/>AES-256-GCM + Nonce 12B + AAD (type:entryId:field:v1)"]
+        DocFiles["DocumentStore (filesDir/docs/<uuid>.bin)<br/>Streaming AEAD (4KB chunks) + AAD"]
         VK -->|"Mã hóa & Giải mã / Encrypt & Decrypt"| CredFields
         VK -->|"Mã hóa & Giải mã / Encrypt & Decrypt"| DocFiles
     end
@@ -73,137 +72,122 @@ flowchart TD
 
 ---
 
-## 3. Chi tiết các thành phần mật mã / Cryptographic Components Specification
+## 3. Phân công & Đồng bộ hóa Nhiệm vụ Mật mã (R1 $\leftrightarrow$ R5) / Task Synchronization (R1 & R5)
 
-### 3.1. Dẫn xuất khóa bằng Argon2id / Key Derivation via Argon2id (`Master Password` $\rightarrow$ `Master Key`)
-- **Thư viện sử dụng / Library:**
-  - **VI:** `argon2kt` (được R5 khảo sát phiên bản stable và API thực tế trong giai đoạn G1).
-  - **EN:** `argon2kt` (stable version and exact artifact coordinates verified by R5 during Phase G1).
-- **Biến thể / Variant:**
-  - **VI:** `Argon2id` (phiên bản `0x13` / v1.3) — kết hợp khả năng kháng tấn công kênh kề (side-channel) của Argon2i và kháng phần cứng chuyên dụng (GPU/ASIC) của Argon2d.
-  - **EN:** `Argon2id` (version `0x13` / v1.3) — combining the side-channel resistance of Argon2i with the GPU/ASIC cracking resistance of Argon2d.
-- **Tham số đề xuất ban đầu / Initial Proposed Parameters:**
-  - **VI:** *Sẽ đo thực tế trên thiết bị thật ở mục 5.2 giai đoạn V2 để thời gian mở khóa đạt khoảng `300ms – 500ms` mà không gây giật UI:*
-  - **EN:** *To be benchmarked on physical target devices in Phase V2 (Task 5.2) targeting a `300ms – 500ms` derivation latency off the main thread:*
-    - `salt`: **16 bytes (128-bit)** generated via `java.security.SecureRandom`.
-    - `hashLength` (`MK` output size): **32 bytes (256-bit)**.
-    - `memoryCost`: **65536 KiB (64 MB)** *(or tuned to 32768 KiB on lower-tier devices)*.
-    - `iterations` (`t_cost`): **3 passes**.
-    - `parallelism` (`p`): **2 lanes**.
-- **Lưu trữ tham số / Parameter Persistence:**
-  - **VI:** Các tham số `argon2_memory`, `argon2_iterations`, `argon2_parallelism` và `salt` được lưu kèm trong bảng `vault_metadata` để hỗ trợ nâng cấp tham số về sau.
-  - **EN:** `argon2_memory`, `argon2_iterations`, `argon2_parallelism`, and `salt` are stored alongside the wrapped key in `vault_metadata` to support future parameter upgrades.
+| Hạng mục / Component | Phụ trách chính / Owner | Phối hợp & Duyệt / Reviewer | Đầu ra kỹ thuật thống nhất / Unified Technical Deliverable |
+| :--- | :---: | :---: | :--- |
+| **Argon2id KDF & Benchmark** | **R5 (Minh)** | **R1 (Mạnh4)** duyệt PR | Thư viện `com.lambdapioneer.argon2kt:argon2kt:1.6.0`, tham số RFC 9106 (`m=64MiB, t=3, p=1`), đo thời gian thực tế đạt `200ms - 500ms`. |
+| **Double Key Wrapping (`wrappedDEK`, `wrappedDEK_bio`)** | **R5 (Minh)** & **R1 (Mạnh4)** | **R1 (Mạnh4)** duyệt PR | Bọc/mở bọc `VK / DEK` (32B) bằng `MK / KEK` và `vault_wrap_key`; lưu trong bảng `vault_meta`. |
+| **Android Keystore & `BiometricPrompt`** | **R5 (Minh)** | **R1 (Mạnh4)** duyệt PR | Alias `vault_wrap_key`, `setUserAuthenticationRequired(true)`, `setInvalidatedByBiometricEnrollment(true)`, xử lý `KeyPermanentlyInvalidatedException`. |
+| **Lõi `AES-256-GCM` + `AAD` & `VaultSession`** | **R1 (Mạnh4)** | **R5 (Minh)** & **R6 (Mạnh3)** test | Mã hóa trường dữ liệu trong `VaultRepository`, sinh Nonce 12B mới mỗi lần ghi, gắn `AAD` chứa `entryId`, xóa `DEK.fill(0)` khi khóa. |
+| **Đổi Master Password (`Rewrap DEK`) & Lockout** | **R1 (Mạnh4)** & **R2 (Nam)** | **R6 (Mạnh3)** test | Đổi mật khẩu $O(1)$ không giải mã lại DB; lưu `failed_attempts` và `lockout_until` trong `vault_meta`. |
 
-### 3.2. Sinh và Bọc Vault Key / Vault Key (VK) Generation & Wrapping
+---
+
+## 4. Chi tiết các thành phần mật mã / Cryptographic Components Specification
+
+### 4.1. Dẫn xuất khóa bằng Argon2id / Key Derivation via Argon2id (`Master Password` $\rightarrow$ `MK / KEK`)
+- **Thư viện thống nhất với R5 / Unified Library Coordinate:**
+  ```kotlin
+  implementation("com.lambdapioneer.argon2kt:argon2kt:1.6.0")
+  ```
+- **API thực thi / Target API:**
+  - Class: `com.lambdapioneer.argon2kt.Argon2Kt`
+  - Mode: `Argon2Mode.ARGON2_ID` (v1.3 / RFC 9106)
+  - Method: `argon2Kt.hash(mode, password, salt, tCostInIterations, mCostInKibibyte)`
+- **Tham số đề xuất ban đầu / Initial Parameters (RFC 9106):**
+  - `mCostInKibibyte` (`m`): **65536 KiB (64 MiB)** — Memory-hard chống GPU/ASIC.
+  - `tCostInIterations` (`t`): **3 vòng lặp / 3 passes**.
+  - `parallelism` (`p`): **1 luồng / 1 lane** — Tối ưu cho CPU di động, tránh gây lag UI.
+  - `hashLength`: **32 bytes (256-bit)** — Kích thước của `MK / KEK`.
+  - `salt`: **16 bytes (128-bit)** — Sinh từ `java.security.SecureRandom`, lưu trong bảng `vault_meta`.
+  - *Lưu ý V2:* Đo benchmark thực tế trên máy thật ở mục `5.2` để đảm bảo thời gian mở khóa nằm trong ngưỡng **`200ms – 500ms`**.
+
+### 4.2. Sinh, Bọc khóa kép và Quản lý phiên (`VaultSession`) / VK Generation, Double Wrapping & Session Management
 - **Khởi tạo Vault lần đầu / Initial Vault Setup:**
-  1. **VI:** Sinh `Vault Key (VK)` độ dài **32 bytes (256-bit)** bằng `SecureRandom`.
-     **EN:** Generate a **32-byte (256-bit)** `Vault Key (VK)` using `SecureRandom`.
-  2. **VI:** Sinh `salt` (16 bytes), chạy `Argon2id(MasterPassword, salt)` để thu được `Master Key (MK)` (32 bytes).
-     **EN:** Generate a 16-byte `salt` and run `Argon2id(MasterPassword, salt)` to derive the 32-byte `Master Key (MK)`.
-  3. **VI:** Dùng `MK` mã hóa `VK` bằng thuật toán `AES-256-GCM` với `nonce_pw` (12 bytes ngẫu nhiên) và `AAD = "vault_key_wrap_v1"`.
-     **EN:** Encrypt `VK` under `MK` using `AES-256-GCM` with a random 12-byte `nonce_pw` and `AAD = "vault_key_wrap_v1"`.
-  4. **VI:** Lưu `wrapped_vk_password`, `nonce_pw`, `salt` và các tham số Argon2id vào bảng `vault_metadata`.
-     **EN:** Persist `wrapped_vk_password`, `nonce_pw`, `salt`, and Argon2id parameters into the `vault_metadata` table.
-  5. **VI:** Xóa trắng (`fill(0)`) mảng byte của `MasterPassword` và `MK` trong RAM.
-     **EN:** Zeroize (`fill(0)`) the `MasterPassword` and `MK` buffers in RAM immediately.
+  1. **VI:** Sinh `Vault Key (VK / DEK)` độ dài **32 bytes (256-bit)** bằng `SecureRandom`.
+     **EN:** Generate a **32-byte (256-bit)** `Vault Key (VK / DEK)` using `SecureRandom`.
+  2. **VI:** Sinh `salt` (16 bytes), chạy `Argon2id` để dẫn xuất `MK / KEK` (32 bytes) từ `Master Password` (`CharArray`).
+     **EN:** Generate a 16-byte `salt` and run `Argon2id` to derive the 32-byte `MK / KEK` from the `Master Password` (`CharArray`).
+  3. **VI:** Dùng `MK / KEK` bọc `VK / DEK` qua `AES-256-GCM` với `nonce_pw` (12 bytes) và `AAD = "vault_meta:wrapped_dek:v1"` $\rightarrow$ tạo thành `wrappedDEK`.
+     **EN:** Wrap `VK / DEK` under `MK / KEK` using `AES-256-GCM` with a 12-byte `nonce_pw` and `AAD = "vault_meta:wrapped_dek:v1"` $\rightarrow$ producing `wrappedDEK`.
+  4. **VI:** Lưu `wrappedDEK`, `salt` và tham số KDF vào bảng `vault_meta`, sau đó gọi `KEK.fill(0)` và xóa trắng `CharArray` mật khẩu.
+     **EN:** Persist `wrappedDEK`, `salt`, and KDF parameters in `vault_meta`, then immediately invoke `KEK.fill(0)` and clear the password `CharArray`.
 
-- **Mở khóa bằng Master Password / Unlocking with Master Password:**
-  1. **VI:** Kiểm tra `lockout_until` trong `vault_metadata`. Nếu đang bị khóa tạm thời, từ chối ngay.
-     **EN:** Check `lockout_until` in `vault_metadata`. If currently locked out, reject immediately.
-  2. **VI:** Đọc `salt` và tham số Argon2id từ DB, dẫn xuất lại `MK`.
-     **EN:** Read `salt` and Argon2id parameters from the DB and re-derive `MK`.
-  3. **VI:** Giải mã `wrapped_vk_password` với `AAD = "vault_key_wrap_v1"`.
-     **EN:** Decrypt `wrapped_vk_password` using `MK` and `AAD = "vault_key_wrap_v1"`.
-  4. **VI:** Nếu giải mã thành công: nạp `VK` vào bộ nhớ phiên (RAM), đặt lại `failed_attempts = 0`.
-     **EN:** On success: load `VK` into active session memory (RAM) and reset `failed_attempts = 0`.
-  5. **VI:** Nếu ném `AEADBadTagException` (sai mật khẩu hoặc dữ liệu bị sửa): tăng `failed_attempts`, tính thời gian lockout lũy tiến và cập nhật vào DB.
-     **EN:** On `AEADBadTagException` (wrong password or tampered blob): increment `failed_attempts`, compute the progressive lockout timestamp, and persist to DB.
+- **Quản lý phiên `VaultSession` & Tự động khóa / `VaultSession` & Auto-Lock Lifecycle:**
+  - **VI:** `VaultSession` giữ `VK / DEK` trong `In-Memory Safe Zone` khi kho đang mở. Kho sẽ lập tức chuyển sang trạng thái khóa và gọi `DEK.fill(0)` khi:
+    1. Người dùng chủ động bấm khóa Vault.
+    2. Màn hình thiết bị tắt (Screen off).
+    3. Ứng dụng chạy dưới nền quá thời gian quy định (60 giây theo `README.md` / cấu hình tối đa 5 phút không thao tác ở V4).
+  - **EN:** `VaultSession` holds `VK / DEK` in the `In-Memory Safe Zone` while unlocked. It immediately transitions to locked state and invokes `DEK.fill(0)` when:
+    1. The user manually locks the Vault.
+    2. The device screen turns off.
+    3. The app remains in the background beyond the timeout threshold (60s in `README.md` / up to 5m inactivity in V4).
 
-### 3.3. Nhánh Android Keystore & BiometricPrompt / Android Keystore & Biometric Unlock Branch
+### 4.3. Nhánh Android Keystore & BiometricPrompt / Android Keystore & Biometric Unlock Branch
 - **Cấu hình khóa trong `AndroidKeyStore` / `KeyGenParameterSpec` Configuration:**
-  - `keystoreAlias`: `"secure_vault_biometric_kek"`
-  - `Algorithm`: `KeyProperties.KEY_ALGORITHM_AES`, **256-bit**.
-  - `BlockMode / Padding`: `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`.
-  - **VI:** Bắt buộc xác thực sinh trắc học mạnh cho mỗi lần sử dụng khóa:
-    **EN:** Require strong biometric authentication for every cryptographic operation:
+  - `keystoreAlias`: **`"vault_wrap_key"`** (đồng bộ với `README.md` và nhánh R5).
+  - `Algorithm`: `KeyProperties.KEY_ALGORITHM_AES`, **256-bit**, `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`.
+  - **VI:** Bắt buộc xác thực sinh trắc học mạnh cho mỗi lần sử dụng (`CryptoObject`):
+    **EN:** Require strong biometric authentication per operation via `BiometricPrompt.CryptoObject`:
     - `setUserAuthenticationRequired(true)`
-    - `BiometricPrompt.PromptInfo` configured with `Authenticators.BIOMETRIC_STRONG`.
-  - **VI:** Vô hiệu hóa khóa khi thay đổi dữ liệu sinh trắc học trên máy:
-    **EN:** Invalidate key material upon new biometric enrollment:
     - `setInvalidatedByBiometricEnrollment(true)`
 - **Xử lý khi đổi vân tay / Handling `KeyPermanentlyInvalidatedException`:**
-  - **VI:** Khi người dùng thêm vân tay mới vào hệ điều hành, khóa trong Keystore bị vô hiệu hóa vĩnh viễn. Ứng dụng bắt ngoại lệ `KeyPermanentlyInvalidatedException`, xóa `wrapped_vk_biometric` trong DB, xóa khóa cũ trong Keystore và yêu cầu người dùng đăng nhập lại bằng **Master Password** trước khi bật lại sinh trắc học.
-  - **EN:** When a new fingerprint is enrolled at the OS level, the Keystore key is permanently invalidated. The app catches `KeyPermanentlyInvalidatedException`, deletes `wrapped_vk_biometric` from the DB, removes the invalidated Keystore alias, and requires the user to authenticate with their **Master Password** before re-enabling biometric unlock.
+  - **VI:** Khi có vân tay mới đăng ký trên thiết bị, khóa `vault_wrap_key` bị vô hiệu hóa vĩnh viễn và ném `KeyPermanentlyInvalidatedException`. Ứng dụng bắt ngoại lệ này, xóa `wrappedDEK_bio` trong `vault_meta`, xóa khóa `vault_wrap_key` trong Keystore và yêu cầu người dùng mở khóa bằng **Master Password** trước khi thiết lập lại vân tay.
+  - **EN:** When a new fingerprint is enrolled on the device, `vault_wrap_key` is permanently invalidated and throws `KeyPermanentlyInvalidatedException`. The app catches this exception, removes `wrappedDEK_bio` from `vault_meta`, deletes the Keystore alias, and requires **Master Password** authentication before re-enrolling biometrics.
 
-### 3.4. Quy trình Đổi Master Password / Master Password Rotation (Rewrap VK)
-1. **VI:** Người dùng nhập **Mật khẩu hiện tại** $\rightarrow$ dẫn xuất `MK_old` $\rightarrow$ mở bọc để lấy `VK` (xác minh mật khẩu cũ đúng).
-   **EN:** User enters **Current Password** $\rightarrow$ derive `MK_old` $\rightarrow$ unwrap `VK` (verifying current password authenticity).
-2. **VI:** Sinh `salt_new` (16 bytes mới) $\rightarrow$ dẫn xuất `MK_new` từ **Mật khẩu mới** qua Argon2id.
-   **EN:** Generate a fresh 16-byte `salt_new` $\rightarrow$ derive `MK_new` from the **New Password** via Argon2id.
-3. **VI:** Sinh `nonce_pw_new` (12 bytes mới) $\rightarrow$ dùng `MK_new` bọc lại `VK` thành `wrapped_vk_password_new`.
-   **EN:** Generate a fresh 12-byte `nonce_pw_new` $\rightarrow$ wrap `VK` under `MK_new` to produce `wrapped_vk_password_new`.
-4. **VI:** Cập nhật `salt_new`, `nonce_pw_new`, `wrapped_vk_password_new` vào bảng `vault_metadata` trong một transaction.
-   **EN:** Atomically update `salt_new`, `nonce_pw_new`, and `wrapped_vk_password_new` in `vault_metadata` within a single DB transaction.
-5. **VI:** Xóa trắng (`fill(0)`) toàn bộ `MK_old`, `MK_new`, mật khẩu cũ và mới trong RAM.
-   **EN:** Zeroize (`fill(0)`) `MK_old`, `MK_new`, and both old and new password buffers in RAM.
+### 4.4. Quy trình Đổi Master Password (`Rewrap DEK`) / $O(1)$ Master Password Rotation
+1. **VI:** Nhập **Mật khẩu hiện tại** $\rightarrow$ dẫn xuất `KEK_old` $\rightarrow$ giải bọc `wrappedDEK` để lấy `VK / DEK`.
+   **EN:** Enter **Current Password** $\rightarrow$ derive `KEK_old` $\rightarrow$ unwrap `wrappedDEK` to recover `VK / DEK`.
+2. **VI:** Sinh `salt_new` (16 bytes) $\rightarrow$ dẫn xuất `KEK_new` từ **Mật khẩu mới** qua `Argon2id`.
+   **EN:** Generate a fresh 16-byte `salt_new` $\rightarrow$ derive `KEK_new` from the **New Password** via `Argon2id`.
+3. **VI:** Sinh `nonce_new` (12 bytes) $\rightarrow$ dùng `KEK_new` bọc lại `VK / DEK` thành `wrappedDEK` mới và cập nhật vào bảng `vault_meta` trong 1 transaction.
+   **EN:** Generate a fresh 12-byte `nonce_new` $\rightarrow$ re-wrap `VK / DEK` under `KEK_new` and atomically update `vault_meta`.
+4. **VI:** Gọi `KEK_old.fill(0)`, `KEK_new.fill(0)` và xóa trắng các mảng `CharArray` mật khẩu.
+   **EN:** Zeroize `KEK_old.fill(0)`, `KEK_new.fill(0)`, and all password `CharArray` buffers.
 
 ---
 
-## 4. Mã hóa Bản ghi & Associated Data / Field-level Encryption & Associated Data (AAD)
+## 5. Mã hóa Bản ghi (`VaultRepository`) & Tài liệu (`DocumentStore`) / Record & Document Encryption
 
-### 4.1. Thuật toán & Quản lý Nonce / Cipher Suite & Nonce Management
-- **Thuật toán / Algorithm:** `AES/GCM/NoPadding`, 256-bit key (`VK`), **128-bit (16-byte)** Authentication Tag.
-- **Quy tắc Nonce (IV) / Nonce (IV) Rules:**
-  - **VI:** Độ dài chuẩn GCM là **12 bytes (96-bit)**. Mỗi lần mã hóa một trường (khi tạo mới **hoặc** khi cập nhật), bắt buộc gọi `SecureRandom.nextBytes(12)` để sinh Nonce hoàn toàn mới. **Tuyệt đối không tái sử dụng Nonce** với cùng một `VK`.
-  - **EN:** Standard GCM nonce length is **12 bytes (96-bit)**. Every field encryption operation (on insert **or** update) must generate a fresh 12-byte nonce via `SecureRandom.nextBytes(12)`. **Never reuse a `(VK, Nonce)` pair.**
-- **Định dạng lưu trữ trường mã hóa / Encrypted Field Wire Format:**
-  $$\text{EncryptedBlob} = \text{Version (1 byte: 0x01)} \parallel \text{Nonce (12 bytes)} \parallel \text{Ciphertext} \parallel \text{GCM Tag (16 bytes)}$$
+### 5.1. Thuật toán, Quản lý Nonce & Định dạng Blob / Cipher Suite, Nonce Rules & Blob Format
+- **Thuật toán / Algorithm:** `AES/GCM/NoPadding`, khóa `VK / DEK` (256-bit), Authentication Tag **128-bit (16 bytes)**.
+- **Quy tắc Nonce (IV) / Nonce Rules:**
+  - **VI:** Mỗi lần mã hóa một trường hoặc một khối (chunk) tài liệu bắt buộc sinh mới **12 bytes (96-bit) Nonce** từ `SecureRandom`. **Tuyệt đối không tái sử dụng `(DEK, Nonce)`**.
+  - **EN:** Every field or chunk encryption operation must generate a fresh **12-byte (96-bit) Nonce** via `SecureRandom`. **Never reuse a `(DEK, Nonce)` pair.**
+- **Định dạng lưu trữ / Encrypted Blob Wire Format:**
+  $$\text{Blob} = \text{Version (1B: 0x01)} \parallel \text{Nonce (12B)} \parallel \text{Ciphertext} \parallel \text{GCM Tag (16B)}$$
 
-### 4.2. Cấu trúc Associated Data / Associated Data (AAD) Format
-- **VI:** Để ngăn chặn kẻ tấn công có quyền truy cập file SQLite tráo đổi bản mã giữa các dòng hoặc các cột, mọi thao tác mã hóa/giải mã trường đều gắn **AAD** được mã hóa UTF-8:
-- **EN:** To prevent an attacker with SQLite file access from swapping ciphertexts across rows or columns (cut-and-paste attacks), every field encryption/decryption binds UTF-8 encoded **AAD**:
+### 5.2. Cấu trúc Associated Data (AAD) gắn `entryId` / Context-Bound AAD Format
+- **VI:** Đồng bộ với `README.md` (sử dụng `entryId` làm AAD chống tráo đổi bản mã giữa các dòng/cột trong Room DB):
+- **EN:** Aligned with `README.md` (binding `entryId` into AAD to prevent ciphertext swapping across SQLite rows/columns):
 
 ```text
-AAD = "<record_type>:<record_id>:<field_name>:v1"
+AAD = "<record_type>:<entryId>:<field_name>:v1"
 ```
 
-- **Ví dụ thực tế / Concrete Examples:**
-  - Credential Password (`record_id = 550e8400-e29b-41d4-a716-446655440000`):
-    `AAD = "credential:550e8400-e29b-41d4-a716-446655440000:password:v1"`
-  - Identity Document Number (`record_id = 7c9e6679-7425-40de-944b-e07fc1f90ae7`):
-    `AAD = "document:7c9e6679-7425-40de-944b-e07fc1f90ae7:doc_number:v1"`
-- **VI:** Khi giải mã, nếu bản mã bị di chuyển sang dòng khác hoặc cột khác, `AAD` tái tạo sẽ không khớp và phép kiểm tra GCM Tag sẽ thất bại ngay lập tức (`AEADBadTagException`).
-- **EN:** During decryption, if a ciphertext blob was moved to another row or column, the reconstructed `AAD` will mismatch and GCM tag verification will immediately fail (`AEADBadTagException`).
+- **Ví dụ / Examples:**
+  - Credential Password: `AAD = "credential:550e8400-e29b-41d4-a716-446655440000:password:v1"`
+  - Identity Document Number: `AAD = "document:7c9e6679-7425-40de-944b-e07fc1f90ae7:doc_number:v1"`
+  - Document Binary File (`filesDir/docs/<uuid>.bin`): `AAD = "document_file:<entryId>:v1"`
+
+### 5.3. Mã hóa Tài liệu trong `DocumentStore` (Phase V3) & Bản sao lưu `.svbk`
+- **VI:** Tài liệu nhạy cảm (ảnh CCCD, hộ chiếu, PDF) nhập qua SAF (`content://`) được xử lý theo luồng (Streaming AEAD / Chunked AES-GCM) và lưu tại `filesDir/docs/<uuid>.bin`. Khi xem chỉ giải mã trên RAM, không tạo file tạm chưa mã hóa trên đĩa.
+- **EN:** Sensitive documents (ID scans, passports, PDFs) ingested via SAF (`content://`) are encrypted via Streaming AEAD / Chunked AES-GCM into `filesDir/docs/<uuid>.bin`. Viewing decrypts streams strictly in RAM without creating plaintext temp files on disk.
 
 ---
 
-## 5. Mã hóa File Ảnh & PDF Giấy tờ / Document Image & PDF File Encryption (Phase V3)
+## 6. Xử lý lỗi, Vệ sinh bộ nhớ & Chống Brute-force / Error Handling, Memory Hygiene & Lockout
 
-1. **Mã hóa theo luồng / Streaming AEAD Encryption:**
-   - **VI:** Không dùng AES-GCM một khối duy nhất cho file lớn để tránh tràn RAM (`OutOfMemoryError`). Sử dụng **Google Tink Streaming AEAD** (`AES256_GCM_HKDF_4KB`) với khóa dẫn xuất hoặc Per-file Key được bọc bởi `VK`, gắn `AAD = "document_file:<document_id>:v1"`.
-   - **EN:** Avoid single-shot AES-GCM on large files to prevent `OutOfMemoryError`. Use **Google Tink Streaming AEAD** (`AES256_GCM_HKDF_4KB`) with a subkey or per-file Data Encryption Key wrapped by `VK`, bound to `AAD = "document_file:<document_id>:v1"`.
-2. **Ẩn danh tên file / Filename Anonymization:**
-   - **VI:** File mã hóa lưu trong `context.filesDir/vault_files/` với **tên file là UUID ngẫu nhiên** (không giữ tên gốc hay đuôi `.jpg`/`.pdf`). Tên gốc và MIME type được mã hóa trong Room DB.
-   - **EN:** Encrypted files are stored under `context.filesDir/vault_files/` using **random UUID filenames** (stripping original filenames and `.jpg`/`.pdf` extensions). Original filenames and MIME types are encrypted inside Room DB.
-3. **Giải mã chỉ trong RAM / In-Memory Decryption Only:**
-   - **VI:** Khi người dùng mở xem ảnh/PDF, luồng giải mã chỉ đọc ra `ByteArray` / `Bitmap` trong RAM, tuyệt đối không ghi file tạm chưa mã hóa xuống đĩa.
-   - **EN:** When viewing an image or PDF, the decrypted stream is held strictly in RAM (`ByteArray` / `Bitmap`) and never written to temporary plaintext files on disk.
-
----
-
-## 6. Xử lý lỗi & Vệ sinh bộ nhớ / Error Handling & Memory Hygiene
-
-1. **Vệ sinh bộ nhớ khả biến / RAM Zeroization:**
-   - **VI:** Không truyền Master Password dưới dạng `kotlin.String` ở tầng Crypto (do `String` trên JVM là bất biến). Sử dụng `CharArray` cho mật khẩu và `ByteArray` cho `MK`, `VK`, dữ liệu giải mã. Luôn dùng `try { ... } finally { array.fill(0) }` để xóa trắng sau khi dùng và khi **Auto-lock**.
-   - **EN:** Never pass the Master Password as an immutable `kotlin.String` inside the Crypto layer. Use `CharArray` for passwords and `ByteArray` for `MK`, `VK`, and plaintext buffers. Always wrap operations in `try { ... } finally { array.fill(0) }` and zeroize `VK` upon **Auto-lock**.
+1. **Vệ sinh bộ nhớ khả biến / RAM Zeroization (`fill(0)`):**
+   - **VI:** Luôn xóa `CharArray` mật khẩu, `KEK.fill(0)` ngay sau khi mở khóa, và `DEK.fill(0)` khi khóa `VaultSession`. Ghi nhận rõ giới hạn của JVM/ART Garbage Collector trong báo cáo bảo mật.
+   - **EN:** Always zeroize password `CharArray` buffers, invoke `KEK.fill(0)` immediately after key unwrapping, and invoke `DEK.fill(0)` when locking `VaultSession`, while documenting JVM/ART GC limitations.
 2. **Xử lý ngoại lệ mật mã an toàn / Safe Crypto Exception Handling:**
-   - **VI:** Mọi lỗi giải mã (`AEADBadTagException`, `GeneralSecurityException`, file hỏng) được bắt tại tầng `security/` và trả về kết quả định danh (`CryptoResult.AuthFailed`, `CryptoResult.TamperedOrCorrupted`). **Tuyệt đối không ghi log** khóa, mật khẩu, plaintext hoặc chi tiết exception ra `Logcat`.
-   - **EN:** All cryptographic exceptions (`AEADBadTagException`, `GeneralSecurityException`, truncated files) are caught inside the `security/` layer and mapped to domain-safe sealed results (`CryptoResult.AuthFailed`, `CryptoResult.TamperedOrCorrupted`). **Never log** keys, passwords, plaintext, or raw cipher stack traces to `Logcat`.
-3. **Chống Brute-force / Lockout & Progressive Delay Policy:**
-   - **VI:** Lưu `failed_attempts` và `lockout_until` trong bảng `vault_metadata`:
-   - **EN:** Persist `failed_attempts` and `lockout_until` in the `vault_metadata` table:
-     - Attempts 1–4: Allow immediate retry (Cho phép thử lại ngay).
-     - Attempt 5: Lockout for **30 seconds** (Khóa 30 giây).
-     - Attempt 6: Lockout for **1 minute** (Khóa 1 phút).
-     - Attempt 7: Lockout for **5 minutes** (Khóa 5 phút).
-     - Attempt 8+: Lockout for **15 minutes** (Khóa 15 phút).
+   - **VI:** Mọi lỗi xác thực thẻ GCM (`AEADBadTagException`), mật khẩu sai, hoặc file `.bin`/`.svbk` bị sửa đổi đều được bắt tại tầng `security/` và trả về lỗi định danh chung; tuyệt đối không ghi khóa hay dữ liệu nhạy cảm ra `Logcat`.
+   - **EN:** All GCM tag verification failures (`AEADBadTagException`), wrong passwords, or tampered `.bin`/`.svbk` files are caught in the `security/` layer and mapped to generic domain errors; never log sensitive data to `Logcat`.
+3. **Chính sách Lockout & Delay lũy tiến trong `vault_meta` / Persistent Lockout Policy:**
+   - Attempts 1–4: Allow immediate retry (Cho phép thử lại ngay).
+   - Attempt 5: Lockout for **30 seconds** (Khóa 30 giây).
+   - Attempt 6: Lockout for **1 minute** (Khóa 1 phút).
+   - Attempt 7: Lockout for **5 minutes** (Khóa 5 phút).
+   - Attempt 8+: Lockout for **15 minutes** (Khóa 15 phút).
