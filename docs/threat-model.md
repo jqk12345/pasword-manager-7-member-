@@ -14,6 +14,9 @@
 
 **EN:** **Secure Vault Android** is a password manager (Credentials) and sensitive personal document vault (National ID, Passport, Driver's License, Health Insurance...) operating **100% offline** (no `INTERNET` permission). All sensitive data is encrypted using Authenticated Encryption with Associated Data (`AEAD`) prior to being written to device storage.
 
+### Sơ đồ Luồng dữ liệu & Ranh giới Tin cậy / Data Flow & Trust Boundaries Diagram
+![Threat Model — Data Flow Diagram & Trust Boundaries](threat-model-dfd.png)
+
 ```mermaid
 flowchart TB
     User(["Người dùng / User"])

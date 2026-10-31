@@ -29,6 +29,8 @@
 
 ## 2. Sơ đồ phân cấp khóa / Key Hierarchy Diagram
 
+![Cryptography Design — Key Hierarchy & AEAD Context Binding](crypto-hierarchy.png)
+
 ```mermaid
 flowchart TD
     subgraph UserInput["1. Nhánh Mật khẩu / Password Unlock Branch"]
