@@ -16,3 +16,8 @@
 - **Đã làm:** Vẽ và xuất sơ đồ kiến trúc 3 vùng bảo mật (`architecture.drawio`, `architecture.png`). Khảo sát thư viện `lambdapioneer/argon2kt` (v1.6.0), đề xuất tham số KDF theo RFC 9106, soạn thảo bản nháp `crypto-design.md`.
 - **Khái niệm then chốt:** Argon2id (Data-dependent vs Data-independent memory access, chống Side-channel và GPU/ASIC), Key Wrapping AES-256-GCM, Memory dump attack.
 - **Kế hoạch tiếp theo:** Phối hợp Trưởng nhóm Mạnh4 (R1) duyệt thiết kế G1; chuẩn bị bước vào giai đoạn V2 (Argon2kt implementation & benchmark).
+
+### [2026-11-01] Duyệt thiết kế G1 & Đồng bộ hóa cùng R1 Mạnh4
+- **Đã làm:** Thống nhất sơ đồ phân cấp khóa và tham số KDF Argon2id với Trưởng nhóm Mạnh4 (R1). Kiểm tra tài liệu tích hợp trên main và chuẩn bị bước vào giai đoạn V1.
+- **Khái niệm then chốt:** Key hierarchy synchronization, Dual wrapping review, JNI boundary.
+- **Kế hoạch tiếp theo:** Hỗ trợ Nam (R2) cấu hình metadata schema ở V1; nghiên cứu sâu cấu trúc thư viện argon2kt cho V2.
