@@ -1,0 +1,16 @@
+<mxfile host="app.diagrams.net" modified="2026-10-31T23:20:00.000Z" agent="SecureVaultArchitect" version="24.0.0" type="device">
+  <diagram name="Crypto-Key-Hierarchy" id="sv-diag-1">
+    <mxGraphModel dx="1400" dy="950" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="950" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="z_pw" value="1. PASSWORD DERIVATION BRANCH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="90" width="630" height="300" as="geometry"/></mxCell>
+        <mxCell id="z_bio" value="2. HARDWARE BIOMETRIC BRANCH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#059669;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="730" y="90" width="630" height="300" as="geometry"/></mxCell>
+        <mxCell id="z_wrap" value="3. DOUBLE KEY WRAPPING &amp; CORE VAULT KEY (VK)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffbeb;strokeColor=#d97706;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="435" width="1320" height="210" as="geometry"/></mxCell>
+        <mxCell id="z_data" value="4. AUTHENTICATED DATA &amp; FILE ENCRYPTION (AEAD + AAD)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#7c3aed;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="690" width="1320" height="205" as="geometry"/></mxCell>
+    
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
