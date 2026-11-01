@@ -1,4 +1,4 @@
-# 📝 DevLog - Nhật Ký Phát Triển (Minh R5 - Crypto & Keystore)
+# DevLog - Nhật Ký Phát Triển (Minh R5 - Crypto & Keystore)
 
 ---
 
