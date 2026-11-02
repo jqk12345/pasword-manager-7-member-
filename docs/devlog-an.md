@@ -1,6 +1,3 @@
-# Nhật ký An R7
-
-## 02/11/2026 Chuẩn bị bản nháp G1 để review
 
 - **Đã soạn:** [requirements](requirements.md) và [MASVS mapping](masvs-mapping.md) v0.2,  Chưa coi đây là baseline đã được nhóm duyệt.
 - **Đã đối chiếu:** main `84fdbae4c308a4575910f084d47e078062ee502c` (crypto/threat) và nhánh manh3 `92e067a18c66443d40fb4866116f42702c5a782c` (checklist 38 mã ST/CR/AU/PL/PV). Mã yêu cầu R7 và R6 khác namespace nên nối theo nội dung, chưa đổi tham chiếu trong file R6.
