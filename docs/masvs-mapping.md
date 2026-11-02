@@ -1,6 +1,6 @@
 # Mapping MASVS Secure Vault
 
-SV-MASVS-001 v0.2 • 01/11/2026 • An R7 • BẢN CÔ ĐỌNG CHỜ REVIEW. Baseline MASVS v2.1.0 kế thừa v0.1; nối mã test R6 theo mục tiêu, chưa đổi tài liệu nhóm. Mapping là kế hoạch xác minh: implementation Unknown, test Not run, approval Pending.
+nối mã test R6 theo mục tiêu. Mapping là kế hoạch xác minh: implementation Unknown, test Not run, approval Pending.
 
 ## 1 Cách đọc
 
@@ -41,4 +41,4 @@ Test chưa có chức năng ở một mốc nên ghi chưa triển khai/hoãn ki
 
 Nguồn nhóm ghim: main 85f2c17b0bc1653ac9acbf5b60ddd01def8b6629, docs/crypto-design.md và docs/threat-model.md; manh3 92e067a18c66443d40fb4866116f42702c5a782c, docs/secure-testing.md và docs/secure-test-v1.md. Các đường dẫn checklist/templates ghi trong nội dung R6 chưa khớp file thực tế nên cần xác nhận.
 
-Nguồn chuẩn: https://github.com/OWASP/masvs/releases/tag/v2.1.0 ; MASVS commit 8e133d09f4140518ed04cc254b18be9ff4990ffc. MASTG tham khảo kế thừa snapshot 2eb0f7097e5fc702df2f043fb34079fa42956548; không khẳng định test status hôm nay từ snapshot cũ. Trước thực thi R6 xác minh version, deprecated/placeholder và API phù hợp. Bản chi tiết v0.1 do R7 lưu riêng giữ giải thích và nguồn, không là kết luận kiểm thử.
+Nguồn chuẩn: https://github.com/OWASP/masvs/releases/tag/v2.1.0 ; MASVS commit 8e133d09f4140518ed04cc254b18be9ff4990ffc. MASTG tham khảo kế thừa snapshot 2eb0f7097e5fc702df2f043fb34079fa42956548; không khẳng định test status hôm nay từ snapshot cũ. Trước thực thi R6 xác minh version, deprecated/placeholder và API phù hợp.
