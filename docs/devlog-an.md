@@ -2,10 +2,10 @@
 
 ## 02/11/2026 Chuẩn bị bản nháp G1 để review
 
-- **Đã soạn:** [requirements](requirements.md) và [MASVS mapping](masvs-mapping.md) v0.2, chuyển từ hai bản Word cô đọng của R7. Giữ 74 mã theo dải; 222 AC v0.1 chi tiết và bảng đối chiếu 38 test được lưu riêng, không nằm trong PR này. Chưa coi đây là baseline đã được nhóm duyệt.
+- **Đã soạn:** [requirements](requirements.md) và [MASVS mapping](masvs-mapping.md) v0.2,  Chưa coi đây là baseline đã được nhóm duyệt.
 - **Đã đối chiếu:** main `84fdbae4c308a4575910f084d47e078062ee502c` (crypto/threat) và nhánh manh3 `92e067a18c66443d40fb4866116f42702c5a782c` (checklist 38 mã ST/CR/AU/PL/PV). Mã yêu cầu R7 và R6 khác namespace nên nối theo nội dung, chưa đổi tham chiếu trong file R6.
 - **Kiểm tra tài liệu:** chỉ ba file Markdown R7; bảng/đường dẫn nội bộ hợp lệ, 14 control chính, tham chiếu mã test tồn tại trong snapshot R6. Không chạy build, app, MobSF hoặc test bảo mật.
-- **Trạng thái:** Draft for review; implementation Unknown; test Not run; approval Pending. Nội dung có AI hỗ trợ biên tập; An/R7 và người review cần xác nhận trước baseline.
+- **Trạng thái:** Draft for review; implementation Unknown; test Not run; approval Pending. Nội dung có AI hỗ trợ biên tập; cần xác nhận trước baseline.
 
 ### Điểm cần R1 R6 và owner xác nhận
 
