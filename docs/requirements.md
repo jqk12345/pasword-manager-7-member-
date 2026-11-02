@@ -1,7 +1,4 @@
 # Yêu cầu phần mềm Secure Vault
-
-SV-REQ-001 v0.2 • 01/11/2026 • An R7 • BẢN CÔ ĐỌNG CHỜ REVIEW. Phạm vi/74 mã yêu cầu v0.1 được giữ; điều kiện nghiệm thu dưới đây được tóm lược để nhóm đọc nhanh. 222 AC chi tiết v0.1 được R7 lưu làm hồ sơ truy vết riêng, chưa đưa vào PR này; bản nộp tóm lược bên dưới chưa phải toàn bộ AC nguyên văn. Không tự thêm chính sách đã duyệt hoặc kết quả test.
-
 ## 1 Mục tiêu và nguyên tắc
 
 Ứng dụng Android Kotlin/Compose quản lý mật khẩu, giấy tờ, backup mã hóa và Autofill cục bộ. Không backend/cloud/telemetry/INTERNET; chỉ dữ liệu giả trong phát triển/demo. Không lưu master password/khóa thô; dữ liệu nhạy cảm được bảo vệ trước ghi đĩa. Không giới thiệu prototype chưa mã hóa là sản phẩm an toàn.
